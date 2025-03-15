@@ -1,43 +1,13 @@
+from flask import Flask, render_template ,url_for , redirect , abort
+import json
 import os
-from flask import Flask, render_template, redirect, url_for, abort
-from flask_sqlalchemy import SQLAlchemy
-from dotenv import load_dotenv
-from hypercorn.middleware import AsyncioWSGIMiddleware  # ASGI Middleware
-
-# Load environment variables
-load_dotenv()
 
 app = Flask(__name__)
 
-# Database configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL')
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = os.getenv('SQLALCHEMY_TRACK_MODIFICATIONS', 'False') == 'True'
+with open('blogdata/blogdata.json', 'r' , encoding='utf-8') as file:
+    blog_data = json.load(file)
 
-db = SQLAlchemy(app)
 
-# Convert Flask to ASGI for Uvicorn
-asgi_app = AsyncioWSGIMiddleware(app)
-
-# Define BlogPost model
-class BlogPost(db.Model):
-    __tablename__ = "blog_posts"
-    id = db.Column(db.Integer, primary_key=True)
-    title = db.Column(db.String(255), nullable=False)
-    author = db.Column(db.String(100), nullable=False)
-    date = db.Column(db.Date, nullable=False)
-    tags = db.Column(db.ARRAY(db.String), nullable=False)
-    content_path = db.Column(db.String(255), nullable=False)
-
-    # Convert object to dictionary for serialization
-    def to_dict(self):
-        return {
-            "id": self.id,
-            "title": self.title,
-            "author": self.author,
-            "date": self.date.strftime("%Y-%m-%d"),
-            "tags": self.tags,
-            "content_path": self.content_path
-        }
 
 @app.route('/')
 def index():
@@ -47,28 +17,37 @@ def index():
 def blog():
     return redirect(url_for('blog_post', post_id=1))
 
+@app.route('/<int:post_id>/')
+def blog_redirect(post_id):
+    return redirect(url_for('blog_post', post_id=post_id))
+
+
 @app.route('/blog/<int:post_id>')
 def blog_post(post_id):
-    post = BlogPost.query.get(post_id)
+    with open('blogdata/blogdata.json', 'r' , encoding='utf-8') as file:
+        blog_data = json.load(file)
+    post = None
+    for blog_post in blog_data['blog_posts']:
+        if blog_post['id'] == post_id:
+            post = blog_post
+            break
+        
     if post is None:
         abort(404)
+    
+    with open("templates/"+post['content_path'] , "r" , encoding="utf-8") as file:
+        data = file.read()
+    blog_data['blog_posts'].remove(post)
+        
+        
+    return render_template('blog_post.html', post=post , content = data , allblog=blog_data['blog_posts'] )
+    
 
-    with open(f"templates/{post.content_path}", "r", encoding="utf-8") as file:
-        content = file.read()
-
-    all_posts = BlogPost.query.filter(BlogPost.id != post_id).all()
-
-    return render_template(
-        'blog_post.html',
-        post=post.to_dict(),
-        content=content,
-        allblog=[p.to_dict() for p in all_posts]
-    )
 
 @app.errorhandler(404)
 def page_not_found(error):
     return render_template('404.html'), 404
 
+
 if __name__ == '__main__':
-    import uvicorn
-    uvicorn.run("app:asgi_app", host="0.0.0.0", port=5000, reload=True)
+    app.run(debug=True)
