@@ -1,1 +1,13 @@
-.vercel
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.env
+
+# Docker
+*.log
+*.db
+.DS_Store
+pgdata/
